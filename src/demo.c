@@ -193,9 +193,9 @@ void demo(char *cfgfile, char *weightfile, float thresh, float hier_thresh, int 
 
     int count = 0;
     if(!prefix && !dont_show){
-        cvNamedWindow("Demo", CV_WINDOW_NORMAL);
-        cvMoveWindow("Demo", 0, 0);
-        cvResizeWindow("Demo", 1352, 1013);
+        //cvNamedWindow("Demo", CV_WINDOW_NORMAL);
+        //cvMoveWindow("Demo", 0, 0);
+        //cvResizeWindow("Demo", 1352, 1013);
     }
 
     CvVideoWriter* output_video_writer = NULL;    // cv::VideoWriter output_video;
@@ -246,7 +246,7 @@ void demo(char *cfgfile, char *weightfile, float thresh, float hier_thresh, int 
             free_detections(local_dets, local_nboxes);
 
             if(!prefix){
-                if (!dont_show) {
+                if (!dont_show && 0) {
                     show_image_cv_ipl(show_img, "Demo");
                     int c = cvWaitKey(1);
                     if (c == 10) {
