@@ -311,13 +311,12 @@ void train_detector(char *datacfg, char *cfgfile, char *weightfile, int *gpus, i
 
         //if (i % 1000 == 0 || (i < 1000 && i % 100 == 0)) {
         //if (i % 100 == 0) {
-        if (i >= (iter_save + 1000) || i % 1000 == 0) {
-            iter_save = i;
-#ifdef GPU
-            if (ngpus != 1) sync_nets(nets, ngpus, 0);
-#endif
+        if(i%100==0){
+  #ifdef GPU
+            if(ngpus != 1) sync_nets(nets, ngpus, 0);
+  #endif
             char buff[256];
-            sprintf(buff, "%s/%s_%d.weights", backup_directory, base, i);
+            sprintf(buff, "%s/%s_%d_avgloss_%f_.weights", backup_directory, base, i, avg_loss);
             save_weights(net, buff);
         }
 
