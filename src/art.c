@@ -12,16 +12,6 @@
 #endif
 
 
-#ifdef OPENCV
-#include <opencv2/highgui/highgui_c.h>
-#include <opencv2/core/version.hpp>
-#ifndef CV_VERSION_EPOCH
-#include <opencv2/videoio/videoio_c.h>
-#endif
-image get_image_from_stream(CvCapture *cap);
-#endif
-
-
 void demo_art(char *cfgfile, char *weightfile, int cam_index)
 {
 #ifdef OPENCV
@@ -32,20 +22,19 @@ void demo_art(char *cfgfile, char *weightfile, int cam_index)
     set_batch_network(&net, 1);
 
     srand(2222222);
-    CvCapture * cap;
+    cap_cv * cap;
 
-    cap = cvCaptureFromCAM(cam_index);
+    cap = get_capture_webcam(cam_index);
 
     char *window = "ArtJudgementBot9000!!!";
     if(!cap) error("Couldn't connect to webcam.\n");
-    cvNamedWindow(window, CV_WINDOW_NORMAL);
-    cvResizeWindow(window, 512, 512);
+    create_window_cv(window, 0, 512, 512);
     int i;
     int idx[] = {37, 401, 434};
     int n = sizeof(idx)/sizeof(idx[0]);
 
     while(1){
-        image in = get_image_from_stream(cap);
+        image in = get_image_from_stream_cpp(cap);
         image in_s = resize_image(in, net.w, net.h);
         show_image(in, window);
 
@@ -71,7 +60,7 @@ void demo_art(char *cfgfile, char *weightfile, int cam_index)
         free_image(in_s);
         free_image(in);
 
-        cvWaitKey(1);
+        wait_key_cv(1);
     }
 #endif
 }

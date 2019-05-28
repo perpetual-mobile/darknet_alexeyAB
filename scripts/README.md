@@ -10,6 +10,10 @@ ImageNet: http://imagenet.stanford.edu/download.php
 
 ImageNet (ILSVRC2012): http://www.image-net.org/challenges/LSVRC/2012/nonpub-downloads
 
+ImageNet (ILSVRC2015): http://image-net.org/small/download.php
+
+ImageNet VID: http://bvisionweb1.cs.unc.edu/ilsvrc2015/download-videos-3j16.php
+
 Open Images: https://storage.googleapis.com/openimages/web/download.html
 
 Cityscapes: https://www.cityscapes-dataset.com/
@@ -55,3 +59,5 @@ Another list of datasets: http://homepages.inf.ed.ac.uk/rbf/CVonline/Imagedbase.
 Pedestrian DATASETs for Vision based Detection and Tracking: https://hemprasad.wordpress.com/2014/11/08/pedestrian-datasets-for-vision-based-detection-and-tracking/
 
 TrackingNet: https://tracking-net.org/
+
+RGB, RGBD, Texture-mapped 3D mesh models: http://www.ycbbenchmarks.com/

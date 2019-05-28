@@ -133,14 +133,15 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <SDLCheck>true</SDLCheck>
       <AdditionalIncludeDirectories>$(OPENCV_DIR)\include;C:\opencv_3.0\opencv\build\include;..\..\include;..\..\3rdparty\stb\include;..\..\3rdparty\pthreads\include;%(AdditionalIncludeDirectories);$(CudaToolkitIncludeDir);$(CUDNN)\include;$(cudnn)\include</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>OPENCV;CUDNN_HALF;CUDNN;_TIMESPEC_DEFINED;_SCL_SECURE_NO_WARNINGS;_CRT_SECURE_NO_WARNINGS;_CRT_RAND_S;GPU;WIN32;NDEBUG;_CONSOLE;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>OPENCV;CUDNN_HALF;CUDNN;_TIMESPEC_DEFINED;_SCL_SECURE_NO_WARNINGS;_CRT_SECURE_NO_WARNINGS;_CRT_RAND_S;GPU;WIN32;_CONSOLE;_LIB;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <CLanguageStandard>c11</CLanguageStandard>
       <CppLanguageStandard>c++1y</CppLanguageStandard>
       <PrecompiledHeaderCompileAs>CompileAsCpp</PrecompiledHeaderCompileAs>
       <CompileAs>Default</CompileAs>
-      <UndefinePreprocessorDefinitions>
-      </UndefinePreprocessorDefinitions>
+      <UndefinePreprocessorDefinitions>NDEBUG</UndefinePreprocessorDefinitions>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <AdditionalUsingDirectories>
+      </AdditionalUsingDirectories>
     </ClCompile>
     <Link>
       <GenerateDebugInformation>true</GenerateDebugInformation>
@@ -184,6 +185,7 @@
     <ClCompile Include="..\..\src\compare.c" />
     <ClCompile Include="..\..\src\connected_layer.c" />
     <ClCompile Include="..\..\src\convolutional_layer.c" />
+    <ClCompile Include="..\..\src\conv_lstm_layer.c" />
     <ClCompile Include="..\..\src\cost_layer.c" />
     <ClCompile Include="..\..\src\cpu_gemm.c" />
     <ClCompile Include="..\..\src\crnn_layer.c" />
@@ -205,6 +207,7 @@
     <ClCompile Include="..\..\src\http_stream.cpp" />
     <ClCompile Include="..\..\src\im2col.c" />
     <ClCompile Include="..\..\src\image.c" />
+    <ClCompile Include="..\..\src\image_opencv.cpp" />
     <ClCompile Include="..\..\src\layer.c" />
     <ClCompile Include="..\..\src\list.c" />
     <ClCompile Include="..\..\src\local_layer.c" />
@@ -248,6 +251,7 @@
     <ClInclude Include="..\..\src\col2im.h" />
     <ClInclude Include="..\..\src\connected_layer.h" />
     <ClInclude Include="..\..\src\convolutional_layer.h" />
+    <ClInclude Include="..\..\src\conv_lstm_layer.h" />
     <ClInclude Include="..\..\src\cost_layer.h" />
     <ClInclude Include="..\..\src\crnn_layer.h" />
     <ClInclude Include="..\..\src\crop_layer.h" />
@@ -264,6 +268,7 @@
     <ClInclude Include="..\..\src\http_stream.h" />
     <ClInclude Include="..\..\src\im2col.h" />
     <ClInclude Include="..\..\src\image.h" />
+    <ClInclude Include="..\..\src\image_opencv.h" />
     <ClInclude Include="..\..\src\layer.h" />
     <ClInclude Include="..\..\src\list.h" />
     <ClInclude Include="..\..\src\local_layer.h" />

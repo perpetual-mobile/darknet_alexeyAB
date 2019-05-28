@@ -129,7 +129,9 @@ cv::Mat slMat2cvMat(sl::Mat &input) {
 cv::Mat zed_capture_rgb(sl::Camera &zed) {
     sl::Mat left;
     zed.retrieveImage(left);
-    return slMat2cvMat(left).clone();
+    cv::Mat left_rgb;
+    cv::cvtColor(slMat2cvMat(left), left_rgb, CV_RGBA2RGB);
+    return left_rgb;
 }
 
 cv::Mat zed_capture_3d(sl::Camera &zed) {
@@ -149,7 +151,7 @@ std::vector<bbox_t> get_3d_coordinates(std::vector<bbox_t> bbox_vect, cv::Mat xy
 
 #include <opencv2/opencv.hpp>            // C++
 #include <opencv2/core/version.hpp>
-#ifndef CV_VERSION_EPOCH
+#ifndef CV_VERSION_EPOCH     // OpenCV 3.x and 4.x
 #include <opencv2/videoio/videoio.hpp>
 #define OPENCV_VERSION CVAUX_STR(CV_VERSION_MAJOR)"" CVAUX_STR(CV_VERSION_MINOR)"" CVAUX_STR(CV_VERSION_REVISION)
 #ifndef USE_CMAKE_LIBS
@@ -162,12 +164,13 @@ std::vector<bbox_t> get_3d_coordinates(std::vector<bbox_t> bbox_vect, cv::Mat xy
 #pragma comment(lib, "opencv_highgui" OPENCV_VERSION ".lib")
 #endif    // TRACK_OPTFLOW
 #endif    // USE_CMAKE_LIBS
-#else
+#else     // OpenCV 2.x
 #define OPENCV_VERSION CVAUX_STR(CV_VERSION_EPOCH)"" CVAUX_STR(CV_VERSION_MAJOR)"" CVAUX_STR(CV_VERSION_MINOR)
 #ifndef USE_CMAKE_LIBS
 #pragma comment(lib, "opencv_core" OPENCV_VERSION ".lib")
 #pragma comment(lib, "opencv_imgproc" OPENCV_VERSION ".lib")
 #pragma comment(lib, "opencv_highgui" OPENCV_VERSION ".lib")
+#pragma comment(lib, "opencv_video" OPENCV_VERSION ".lib")
 #endif    // USE_CMAKE_LIBS
 #endif    // CV_VERSION_EPOCH
 
@@ -332,7 +335,7 @@ int main(int argc, char *argv[])
                 sl::InitParameters init_params;
                 init_params.depth_minimum_distance = 0.5;
                 init_params.depth_mode = sl::DEPTH_MODE_ULTRA;
-                init_params.camera_resolution = sl::RESOLUTION_HD720;
+                init_params.camera_resolution = sl::RESOLUTION_HD720;// sl::RESOLUTION_HD1080, sl::RESOLUTION_HD720
                 init_params.coordinate_units = sl::UNIT_METER;
                 //init_params.sdk_cuda_ctx = (CUcontext)detector.get_cuda_context();
                 init_params.sdk_gpu_id = detector.cur_gpu_id;
@@ -353,20 +356,27 @@ int main(int argc, char *argv[])
                 cv::VideoCapture cap;
                 if (filename == "web_camera") {
                     cap.open(0);
-                    video_fps = cap.get(CV_CAP_PROP_FPS);
                     cap >> cur_frame;
                 } else if (!use_zed_camera) {
                     cap.open(filename);
-                    video_fps = cap.get(CV_CAP_PROP_FPS);
                     cap >> cur_frame;
                 }
+#ifdef CV_VERSION_EPOCH // OpenCV 2.x
+                video_fps = cap.get(CV_CAP_PROP_FPS);
+#else
+                video_fps = cap.get(cv::CAP_PROP_FPS);
+#endif
                 cv::Size const frame_size = cur_frame.size();
                 //cv::Size const frame_size(cap.get(CV_CAP_PROP_FRAME_WIDTH), cap.get(CV_CAP_PROP_FRAME_HEIGHT));
                 std::cout << "\n Video size: " << frame_size << std::endl;
 
                 cv::VideoWriter output_video;
                 if (save_output_videofile)
+#ifdef CV_VERSION_EPOCH // OpenCV 2.x
                     output_video.open(out_videofile, CV_FOURCC('D', 'I', 'V', 'X'), std::max(35, video_fps), frame_size, true);
+#else
+                    output_video.open(out_videofile, cv::VideoWriter::fourcc('D', 'I', 'V', 'X'), std::max(35, video_fps), frame_size, true);
+#endif
 
                 struct detection_data_t {
                     cv::Mat cap_frame;

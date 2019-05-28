@@ -3,15 +3,6 @@
 #include "utils.h"
 #include "parser.h"
 
-#ifdef OPENCV
-#include <opencv2/highgui/highgui_c.h>
-#include <opencv2/core/version.hpp>
-#ifndef CV_VERSION_EPOCH
-#include <opencv2/videoio/videoio_c.h>
-#endif
-image get_image_from_stream(CvCapture *cap);
-#endif
-
 void extract_voxel(char *lfile, char *rfile, char *prefix)
 {
 #ifdef OPENCV
@@ -19,11 +10,11 @@ void extract_voxel(char *lfile, char *rfile, char *prefix)
     int h = 1080;
     int shift = 0;
     int count = 0;
-    CvCapture *lcap = cvCaptureFromFile(lfile);
-    CvCapture *rcap = cvCaptureFromFile(rfile);
+    cap_cv *lcap = get_capture_video_stream(lfile);
+    cap_cv *rcap = get_capture_video_stream(rfile);
     while(1){
-        image l = get_image_from_stream(lcap);
-        image r = get_image_from_stream(rcap);
+        image l = get_image_from_stream_cpp(lcap);
+        image r = get_image_from_stream_cpp(rcap);
         if(!l.w || !r.w) break;
         if(count%100 == 0) {
             shift = best_3d_shift_r(l, r, -l.h/100, l.h/100);

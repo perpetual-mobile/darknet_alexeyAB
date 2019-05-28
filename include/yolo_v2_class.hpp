@@ -48,6 +48,7 @@ struct bbox_t_container {
 #include <string>
 #include <sstream>
 #include <iostream>
+#include <cmath>
 
 #ifdef OPENCV
 #include <opencv2/opencv.hpp>            // C++
@@ -61,6 +62,7 @@ extern "C" LIB_API int detect_mat(const uint8_t* data, const size_t data_length,
 extern "C" LIB_API int dispose();
 extern "C" LIB_API int get_device_count();
 extern "C" LIB_API int get_device_name(int gpu, char* deviceName);
+extern "C" LIB_API void send_json_custom(char const* send_buf, int port, int timeout);
 
 class Detector {
     std::shared_ptr<void> detector_gpu_ptr;
@@ -86,8 +88,8 @@ public:
 
     LIB_API void *get_cuda_context();
 
-    LIB_API bool send_json_http(std::vector<bbox_t> cur_bbox_vec, std::vector<std::string> obj_names, int frame_id, 
-        std::string filename = std::string(), int timeout = 400000, int port = 8070);
+    //LIB_API bool send_json_http(std::vector<bbox_t> cur_bbox_vec, std::vector<std::string> obj_names, int frame_id, 
+    //    std::string filename = std::string(), int timeout = 400000, int port = 8070);
 
     std::vector<bbox_t> detect_resized(image_t img, int init_w, int init_h, float thresh = 0.2, bool use_mean = false)
     {
@@ -130,33 +132,28 @@ public:
         else if (img_src.channels() == 1) cv::cvtColor(img_src, img, cv::COLOR_GRAY2BGR);
         else std::cerr << " Warning: img_src.channels() is not 1, 3 or 4. It is = " << img_src.channels() << std::endl;
         std::shared_ptr<image_t> image_ptr(new image_t, [](image_t *img) { free_image(*img); delete img; });
-        std::shared_ptr<IplImage> ipl_small = std::make_shared<IplImage>(img);
-        *image_ptr = ipl_to_image(ipl_small.get());
+        *image_ptr = mat_to_image_custom(img);
         return image_ptr;
     }
 
 private:
 
-    static image_t ipl_to_image(IplImage* src)
+    static image_t mat_to_image_custom(cv::Mat mat)
     {
-        unsigned char *data = (unsigned char *)src->imageData;
-        int h = src->height;
-        int w = src->width;
-        int c = src->nChannels;
-        int step = src->widthStep;
-        image_t out = make_image_custom(w, h, c);
-        int count = 0;
-
-        for (int k = 0; k < c; ++k) {
-            for (int i = 0; i < h; ++i) {
-                int i_step = i*step;
-                for (int j = 0; j < w; ++j) {
-                    out.data[count++] = data[i_step + j*c + k] / 255.;
+        int w = mat.cols;
+        int h = mat.rows;
+        int c = mat.channels();
+        image_t im = make_image_custom(w, h, c);
+        unsigned char *data = (unsigned char *)mat.data;
+        int step = mat.step;
+        for (int y = 0; y < h; ++y) {
+            for (int k = 0; k < c; ++k) {
+                for (int x = 0; x < w; ++x) {
+                    im.data[k*w*h + y*w + x] = data[y*step + x*c + k] / 255.0f;
                 }
             }
         }
-
-        return out;
+        return im;
     }
 
     static image_t make_empty_image(int w, int h, int c)
@@ -178,6 +175,51 @@ private:
 
 #endif    // OPENCV
 
+public:
+
+    bool send_json_http(std::vector<bbox_t> cur_bbox_vec, std::vector<std::string> obj_names, int frame_id,
+        std::string filename = std::string(), int timeout = 400000, int port = 8070)
+    {
+        std::string send_str;
+
+        char *tmp_buf = (char *)calloc(1024, sizeof(char));
+        if (!filename.empty()) {
+            sprintf(tmp_buf, "{\n \"frame_id\":%d, \n \"filename\":\"%s\", \n \"objects\": [ \n", frame_id, filename.c_str());
+        }
+        else {
+            sprintf(tmp_buf, "{\n \"frame_id\":%d, \n \"objects\": [ \n", frame_id);
+        }
+        send_str = tmp_buf;
+        free(tmp_buf);
+
+        for (auto & i : cur_bbox_vec) {
+            char *buf = (char *)calloc(2048, sizeof(char));
+
+            sprintf(buf, "  {\"class_id\":%d, \"name\":\"%s\", \"absolute_coordinates\":{\"center_x\":%d, \"center_y\":%d, \"width\":%d, \"height\":%d}, \"confidence\":%f",
+                i.obj_id, obj_names[i.obj_id].c_str(), i.x, i.y, i.w, i.h, i.prob);
+
+            //sprintf(buf, "  {\"class_id\":%d, \"name\":\"%s\", \"relative_coordinates\":{\"center_x\":%f, \"center_y\":%f, \"width\":%f, \"height\":%f}, \"confidence\":%f",
+            //    i.obj_id, obj_names[i.obj_id], i.x, i.y, i.w, i.h, i.prob);
+
+            send_str += buf;
+
+            if (!std::isnan(i.z_3d)) {
+                sprintf(buf, "\n    , \"coordinates_in_meters\":{\"x_3d\":%.2f, \"y_3d\":%.2f, \"z_3d\":%.2f}",
+                    i.x_3d, i.y_3d, i.z_3d);
+                send_str += buf;
+            }
+
+            send_str += "}\n";
+
+            free(buf);
+        }
+
+        //send_str +=  "\n ] \n}, \n";
+        send_str += "\n ] \n}";
+
+        send_json_custom(send_str.c_str(), port, timeout);
+        return true;
+    }
 };
 // --------------------------------------------------------------------------------
 

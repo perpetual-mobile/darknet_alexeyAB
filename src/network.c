@@ -1,7 +1,9 @@
+#include "darknet.h"
+
 #include <stdio.h>
 #include <time.h>
 #include <assert.h>
-#include "darknet.h"
+
 #include "network.h"
 #include "image.h"
 #include "data.h"
@@ -13,6 +15,7 @@
 #include "gru_layer.h"
 #include "rnn_layer.h"
 #include "crnn_layer.h"
+#include "conv_lstm_layer.h"
 #include "local_layer.h"
 #include "convolutional_layer.h"
 #include "activation_layer.h"
@@ -22,6 +25,7 @@
 #include "batchnorm_layer.h"
 #include "maxpool_layer.h"
 #include "reorg_layer.h"
+#include "reorg_old_layer.h"
 #include "avgpool_layer.h"
 #include "cost_layer.h"
 #include "softmax_layer.h"
@@ -88,6 +92,32 @@ void reset_rnn(network *net)
     reset_network_state(net, 0);
 }
 
+float get_current_seq_subdivisions(network net)
+{
+    int sequence_subdivisions = net.init_sequential_subdivisions;
+
+    if (net.num_steps > 0)
+    {
+        int batch_num = get_current_batch(net);
+        int i;
+        for (i = 0; i < net.num_steps; ++i) {
+            if (net.steps[i] > batch_num) break;
+            sequence_subdivisions *= net.seq_scales[i];
+        }
+    }
+    if (sequence_subdivisions < 1) sequence_subdivisions = 1;
+    if (sequence_subdivisions > net.subdivisions) sequence_subdivisions = net.subdivisions;
+    return sequence_subdivisions;
+}
+
+int get_sequence_value(network net)
+{
+    int sequence = 1;
+    if (net.sequential_subdivisions != 0) sequence = net.subdivisions / net.sequential_subdivisions;
+    if (sequence < 1) sequence = 1;
+    return sequence;
+}
+
 float get_current_rate(network net)
 {
     int batch_num = get_current_batch(net);
@@ -117,6 +147,21 @@ float get_current_rate(network net)
             return net.learning_rate * pow(rand_uniform(0,1), net.power);
         case SIG:
             return net.learning_rate * (1./(1.+exp(net.gamma*(batch_num - net.step))));
+        case SGDR:
+        {
+            int last_iteration_start = 0;
+            int cycle_size = net.batches_per_cycle;
+            while ((last_iteration_start + cycle_size) < batch_num)
+            {
+                last_iteration_start += cycle_size;
+                cycle_size *= net.batches_cycle_mult;
+            }
+            rate = net.learning_rate_min +
+                0.5*(net.learning_rate - net.learning_rate_min)
+                * (1. + cos((float)(batch_num - last_iteration_start)*3.14159265 / cycle_size));
+
+            return rate;
+        }
         default:
             fprintf(stderr, "Policy is weird!\n");
             return net.learning_rate;
@@ -307,6 +352,7 @@ float train_network_sgd(network net, data d, int n)
     float sum = 0;
     for(i = 0; i < n; ++i){
         get_random_batch(d, batch, X, y);
+        net.current_subdivision = i;
         float err = train_network_datum(net, X, y);
         sum += err;
     }
@@ -316,6 +362,11 @@ float train_network_sgd(network net, data d, int n)
 }
 
 float train_network(network net, data d)
+{
+    return train_network_waitkey(net, d, 0);
+}
+
+float train_network_waitkey(network net, data d, int wait_key)
 {
     assert(d.X.rows % net.batch == 0);
     int batch = net.batch;
@@ -327,8 +378,10 @@ float train_network(network net, data d)
     float sum = 0;
     for(i = 0; i < n; ++i){
         get_next_batch(d, batch, i*batch, X, y);
+        net.current_subdivision = i;
         float err = train_network_datum(net, X, y);
         sum += err;
+        if(wait_key) wait_key_cv(5);
     }
     free(X);
     free(y);
@@ -471,6 +524,8 @@ int resize_network(network *net, int w, int h)
             resize_upsample_layer(&l, w, h);
         }else if(l.type == REORG){
             resize_reorg_layer(&l, w, h);
+        } else if (l.type == REORG_OLD) {
+            resize_reorg_old_layer(&l, w, h);
         }else if(l.type == AVGPOOL){
             resize_avgpool_layer(&l, w, h);
         }else if(l.type == NORMALIZATION){
@@ -911,6 +966,7 @@ void free_network(network net)
     }
     free(net.layers);
 
+    free(net.seq_scales);
     free(net.scales);
     free(net.steps);
     free(net.seen);
@@ -953,14 +1009,16 @@ void fuse_conv_batchnorm(network net)
                 int f;
                 for (f = 0; f < l->n; ++f)
                 {
-                    l->biases[f] = l->biases[f] - (double)l->scales[f] * l->rolling_mean[f] / (sqrt((double)l->rolling_variance[f]) + .000001f);
+                    //l->biases[f] = l->biases[f] - (double)l->scales[f] * l->rolling_mean[f] / (sqrt((double)l->rolling_variance[f]) + .000001f);
+                    l->biases[f] = l->biases[f] - (double)l->scales[f] * l->rolling_mean[f] / (sqrt((double)l->rolling_variance[f] + .000001));
 
-                    const size_t filter_size = l->size*l->size*l->c;
+                    const size_t filter_size = l->size*l->size*l->c / l->groups;
                     int i;
                     for (i = 0; i < filter_size; ++i) {
                         int w_index = f*filter_size + i;
 
-                        l->weights[w_index] = (double)l->weights[w_index] * l->scales[f] / (sqrt((double)l->rolling_variance[f]) + .000001f);
+                        //l->weights[w_index] = (double)l->weights[w_index] * l->scales[f] / (sqrt((double)l->rolling_variance[f]) + .000001f);
+                        l->weights[w_index] = (double)l->weights[w_index] * l->scales[f] / (sqrt((double)l->rolling_variance[f] + .000001));
                     }
                 }
 
@@ -1096,4 +1154,41 @@ network combine_train_valid_networks(network net_train, network net_map)
         }
     }
     return net_combined;
+}
+
+void free_network_recurrent_state(network net)
+{
+    int k;
+    for (k = 0; k < net.n; ++k) {
+        if (net.layers[k].type == CONV_LSTM) free_state_conv_lstm(net.layers[k]);
+        if (net.layers[k].type == CRNN) free_state_crnn(net.layers[k]);
+    }
+}
+
+void randomize_network_recurrent_state(network net)
+{
+    int k;
+    for (k = 0; k < net.n; ++k) {
+        if (net.layers[k].type == CONV_LSTM) randomize_state_conv_lstm(net.layers[k]);
+        if (net.layers[k].type == CRNN) free_state_crnn(net.layers[k]);
+    }
+}
+
+
+void remember_network_recurrent_state(network net)
+{
+    int k;
+    for (k = 0; k < net.n; ++k) {
+        if (net.layers[k].type == CONV_LSTM) remember_state_conv_lstm(net.layers[k]);
+        //if (net.layers[k].type == CRNN) free_state_crnn(net.layers[k]);
+    }
+}
+
+void restore_network_recurrent_state(network net)
+{
+    int k;
+    for (k = 0; k < net.n; ++k) {
+        if (net.layers[k].type == CONV_LSTM) restore_state_conv_lstm(net.layers[k]);
+        if (net.layers[k].type == CRNN) free_state_crnn(net.layers[k]);
+    }
 }

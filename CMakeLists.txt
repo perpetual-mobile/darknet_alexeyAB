@@ -1,14 +1,17 @@
-cmake_minimum_required(VERSION 3.4)
+cmake_minimum_required(VERSION 3.8)
 
-set(Darknet_MAJOR_VERSION 1)
-set(Darknet_MINOR_VERSION 0)
-set(Darknet_PATCH_VERSION 0)
+set(Darknet_MAJOR_VERSION 0)
+set(Darknet_MINOR_VERSION 2)
+set(Darknet_PATCH_VERSION 5)
 set(Darknet_VERSION ${Darknet_MAJOR_VERSION}.${Darknet_MINOR_VERSION}.${Darknet_PATCH_VERSION})
 
 set(CMAKE_VERBOSE_MAKEFILE "FALSE" CACHE BOOL "Create verbose makefile")
+set(BUILD_SHARED_LIBS "TRUE" CACHE BOOL "Create darklib as a shared library")
 
 if(DEFINED ENV{VCPKG_ROOT} AND NOT DEFINED CMAKE_TOOLCHAIN_FILE)
-  set(CMAKE_TOOLCHAIN_FILE "${VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" CACHE STRING "")
+  set(CMAKE_TOOLCHAIN_FILE "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" CACHE STRING "")
+  message(STATUS "VCPKG found: $ENV{VCPKG_ROOT}")
+  message(STATUS "Using VCPKG integration")
 endif()
 
 project(Darknet VERSION ${Darknet_VERSION})
@@ -26,7 +29,7 @@ set(CMAKE_CXX_STANDARD 11)
 set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}/cmake/Modules/" ${CMAKE_MODULE_PATH})
 
 set(CMAKE_INSTALL_PREFIX "${CMAKE_CURRENT_LIST_DIR}" CACHE PATH "Install prefix" FORCE)
-set(INSTALL_BIN_DIR      "${CMAKE_CURRENT_LIST_DIR}" CACHE PATH "Path where exe and dll will be installed" FORCE)
+set(INSTALL_BIN_DIR      "${CMAKE_CURRENT_LIST_DIR}" CACHE PATH "Path where exe and dll will be installed")
 set(INSTALL_LIB_DIR      "lib"                       CACHE PATH "Path where lib will be installed")
 set(INSTALL_INCLUDE_DIR  "include"                   CACHE PATH "Path where headers will be installed")
 set(INSTALL_CMAKE_DIR    "share/darknet"             CACHE PATH "Path where cmake configs will be installed")
@@ -37,6 +40,11 @@ foreach(p LIB BIN INCLUDE CMAKE)
     set(${var} "${CMAKE_INSTALL_PREFIX}/${${var}}")
   endif()
 endforeach()
+
+configure_file(
+  "${CMAKE_CURRENT_LIST_DIR}/src/version.h.in"
+  "${CMAKE_CURRENT_LIST_DIR}/src/version.h"
+)
 
 set(ENABLE_CUDA "TRUE" CACHE BOOL "Enable CUDA build")
 if(${CMAKE_VERSION} VERSION_LESS "3.8.0")
@@ -72,6 +80,10 @@ if(ENABLE_CUDA AND NOT CUDA_COMPUTE_MODEL)
   set_property(CACHE CUDA_COMPUTE_MODEL PROPERTY STRINGS ${CUDA_COMPUTE_MODEL_75} ${CUDA_COMPUTE_MODEL_72} ${CUDA_COMPUTE_MODEL_70} ${CUDA_COMPUTE_MODEL_62} ${CUDA_COMPUTE_MODEL_61} ${CUDA_COMPUTE_MODEL_60} ${CUDA_COMPUTE_MODEL_53} ${CUDA_COMPUTE_MODEL_52} ${CUDA_COMPUTE_MODEL_37} ${CUDA_COMPUTE_MODEL_35} ${CUDA_COMPUTE_MODEL_30})
 endif()
 
+if(NOT ENABLE_CUDA)
+  set(CUDA_COMPUTE_MODEL "0" CACHE STRING "CUDA Compute Model set to 0 because CUDA is missing" FORCE)
+endif()
+
 if(USE_INTEGRATED_LIBS)
   set(PThreads_windows_DIR ${CMAKE_CURRENT_LIST_DIR}/3rdparty/pthreads CACHE PATH "Path where pthreads for windows can be located")
   add_definitions(-D_TIMESPEC_DEFINED)
@@ -97,6 +109,9 @@ if(CMAKE_COMPILER_IS_GNUCC)
 endif()
 
 if ("${CMAKE_CXX_COMPILER_ID}" MATCHES "Clang")
+  if (UNIX AND NOT APPLE)
+    set(CMAKE_CXX_FLAGS "-pthread ${CMAKE_CXX_FLAGS}")  #force pthread to avoid bugs in some cmake setups
+  endif()
   set(CMAKE_CXX_FLAGS "-Wno-deprecated -Wno-writable-strings ${CMAKE_CXX_FLAGS}")
   string(REGEX REPLACE "-O0" "-Og" CMAKE_CXX_FLAGS_DEBUG ${CMAKE_CXX_FLAGS_DEBUG})
   string(REGEX REPLACE "-O3" "-Ofast" CMAKE_CXX_FLAGS_RELEASE ${CMAKE_CXX_FLAGS_RELEASE})
@@ -112,7 +127,8 @@ set(SKIP_USELIB_TRACK "FALSE" CACHE BOOL "Skip building uselib_track" FORCE)
 if(OpenCV_FOUND)
   if(ENABLE_CUDA AND NOT OpenCV_CUDA_VERSION)
     set(SKIP_USELIB_TRACK "TRUE" CACHE BOOL "Skip building uselib_track" FORCE)
-    message(WARNING "The build of OpenCV does not have CUDA support, so some tools have been disabled! Please rebuild OpenCV with CUDA support to build them!")
+    message(STATUS "  ->  darknet is fine for now, but uselib_track has been disabled!")
+    message(STATUS "  ->  Please rebuild OpenCV from sources with CUDA support to enable it")
   endif()
   add_definitions(-DOPENCV)
 endif()
@@ -174,14 +190,14 @@ if(ENABLE_CUDA)
       include_directories(${ZED_INCLUDE_DIRS})
       link_directories(${ZED_LIBRARY_DIR})
       add_definitions(-DZED_STEREO)
-      message("ZED Camera support enabled")
+      message(STATUS "ZED SDK enabled")
     else()
-      message(WARNING "ZED SDK not found !")
+      message(STATUS "ZED SDK not found")
       set(ENABLE_ZED_CAMERA "FALSE" CACHE BOOL "Enable ZED Camera support" FORCE)
     endif()
   endif()
 else()
-  message(WARNING "ZED SDK requires CUDA !")
+  message(STATUS "ZED SDK not enabled, since it requires CUDA")
   set(ENABLE_ZED_CAMERA "FALSE" CACHE BOOL "Enable ZED Camera support" FORCE)
 endif()
 
@@ -218,6 +234,7 @@ file(GLOB sources "${CMAKE_CURRENT_LIST_DIR}/src/*.c")
 #add also .cpp files
 list(APPEND sources
   ${CMAKE_CURRENT_LIST_DIR}/src/http_stream.cpp
+  ${CMAKE_CURRENT_LIST_DIR}/src/image_opencv.cpp
 )
 #remove darknet.c file which is necessary only for the executable, not for the lib
 list(REMOVE_ITEM sources
@@ -255,7 +272,7 @@ endif()
 target_compile_definitions(darklib PRIVATE LIB_EXPORTS=1)
 set_target_properties(darklib PROPERTIES LINKER_LANGUAGE CXX)
 
-if(OpenCV_VERSION VERSION_GREATER "3.0" AND NOT SKIP_USELIB_TRACK)
+if(OpenCV_FOUND AND OpenCV_VERSION VERSION_GREATER "3.0" AND NOT SKIP_USELIB_TRACK)
   add_executable(uselib_track ${CMAKE_CURRENT_LIST_DIR}/src/yolo_console_dll.cpp)
   target_compile_definitions(uselib_track PRIVATE TRACK_OPTFLOW=1)
   set_target_properties(uselib_track PROPERTIES LINKER_LANGUAGE CXX)
@@ -317,27 +334,25 @@ if(ENABLE_CUDA)
 endif()
 
 target_link_libraries(uselib PRIVATE darklib)
-if(OpenCV_VERSION VERSION_GREATER "3.0" AND NOT SKIP_USELIB_TRACK)
+if(OpenCV_FOUND AND OpenCV_VERSION VERSION_GREATER "3.0" AND NOT SKIP_USELIB_TRACK)
   target_link_libraries(uselib_track PRIVATE darklib)
 endif()
 
 set_target_properties(darklib PROPERTIES PUBLIC_HEADER "${exported_headers};${CMAKE_CURRENT_LIST_DIR}/include/yolo_v2_class.hpp")
 
-install(TARGETS darklib uselib darknet EXPORT DarknetTargets
+install(TARGETS darklib EXPORT DarknetTargets
   RUNTIME DESTINATION "${INSTALL_BIN_DIR}"
   LIBRARY DESTINATION "${INSTALL_LIB_DIR}"
   ARCHIVE DESTINATION "${INSTALL_LIB_DIR}"
   PUBLIC_HEADER DESTINATION "${INSTALL_INCLUDE_DIR}"
   COMPONENT dev
 )
-if(OpenCV_VERSION VERSION_GREATER "3.0" AND NOT SKIP_USELIB_TRACK)
+install(TARGETS uselib darknet
+  DESTINATION "${INSTALL_BIN_DIR}"
+)
+if(OpenCV_FOUND AND OpenCV_VERSION VERSION_GREATER "3.0" AND NOT SKIP_USELIB_TRACK)
   install(TARGETS uselib_track
-    EXPORT DarknetTargets
-    RUNTIME DESTINATION "${INSTALL_BIN_DIR}"
-    LIBRARY DESTINATION "${INSTALL_LIB_DIR}"
-    ARCHIVE DESTINATION "${INSTALL_LIB_DIR}"
-    PUBLIC_HEADER DESTINATION "${INSTALL_INCLUDE_DIR}"
-    COMPONENT dev
+    DESTINATION "${INSTALL_BIN_DIR}"
   )
 endif()
 
