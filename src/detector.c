@@ -1032,8 +1032,8 @@ float validate_detector_map(char *datacfg, char *cfgfile, char *weightfile, floa
             avg_precision = avg_precision / map_points;
         }
 
-        printf("class_id = %d, name = %s, ap = %2.2f%%   \t (TP = %d, FP = %d) \n",
-            i, names[i], avg_precision * 100, tp_for_thresh_per_class[i], fp_for_thresh_per_class[i]);
+        printf("class_id = %d, name = %s, ap = %2.2f%%   \t (TP = %d, FP = %d, FN = %d) \n",
+            i, names[i], avg_precision * 100, tp_for_thresh_per_class[i], fp_for_thresh_per_class[i], truth_classes_count[i] - tp_for_thresh_per_class[i]);
 
         float class_precision = (float)tp_for_thresh_per_class[i] / ((float)tp_for_thresh_per_class[i] + (float)fp_for_thresh_per_class[i]);
         float class_recall = (float)tp_for_thresh_per_class[i] / ((float)tp_for_thresh_per_class[i] + (float)(truth_classes_count[i] - tp_for_thresh_per_class[i]));
