@@ -18,7 +18,7 @@ typedef __compar_fn_t comparison_fn_t;
 
 #include "http_stream.h"
 
-int check_mistakes;
+int check_mistakes = 0;
 
 static int coco_ids[] = { 1,2,3,4,5,6,7,8,9,10,11,13,14,15,16,17,18,19,20,21,22,23,24,25,27,28,31,32,33,34,35,36,37,38,39,40,41,42,43,44,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63,64,65,67,70,72,73,74,75,76,77,78,79,80,81,82,84,85,86,87,88,89,90 };
 
@@ -129,9 +129,11 @@ void train_detector(char *datacfg, char *cfgfile, char *weightfile, int *gpus, i
 
     args.angle = net.angle;
     args.blur = net.blur;
+    args.mixup = net.mixup;
     args.exposure = net.exposure;
     args.saturation = net.saturation;
     args.hue = net.hue;
+    args.letter_box = net.letter_box;
     if (dont_show && show_imgs) show_imgs = 2;
     args.show_imgs = show_imgs;
 
@@ -274,7 +276,7 @@ void train_detector(char *datacfg, char *cfgfile, char *weightfile, int *gpus, i
             //network net_combined = combine_train_valid_networks(net, net_map);
 
             iter_map = i;
-            mean_average_precision = validate_detector_map(datacfg, cfgfile, weightfile, 0.25, 0.5, 0, &net_map);// &net_combined);
+            mean_average_precision = validate_detector_map(datacfg, cfgfile, weightfile, 0.25, 0.5, 0, net.letter_box, &net_map);// &net_combined);
             printf("\n mean_average_precision (mAP@0.5) = %f \n", mean_average_precision);
             if (mean_average_precision > best_map) {
                 best_map = mean_average_precision;
@@ -552,7 +554,11 @@ void validate_detector(char *datacfg, char *cfgfile, char *weightfile, char *out
         if (fps) fclose(fps[j]);
     }
     if (coco) {
+#ifdef WIN32
+        fseek(fp, -3, SEEK_CUR);
+#else
         fseek(fp, -2, SEEK_CUR);
+#endif
         fprintf(fp, "\n]\n");
         fclose(fp);
     }
@@ -654,7 +660,7 @@ int detections_comparator(const void *pa, const void *pb)
     return 0;
 }
 
-float validate_detector_map(char *datacfg, char *cfgfile, char *weightfile, float thresh_calc_avg_iou, const float iou_thresh, const int map_points, network *existing_net)
+float validate_detector_map(char *datacfg, char *cfgfile, char *weightfile, float thresh_calc_avg_iou, const float iou_thresh, const int map_points, int letter_box, network *existing_net)
 {
     int j;
     list *options = read_data_cfg(datacfg);
@@ -727,8 +733,8 @@ float validate_detector_map(char *datacfg, char *cfgfile, char *weightfile, floa
     args.w = net.w;
     args.h = net.h;
     args.c = net.c;
-    args.type = IMAGE_DATA;
-    //args.type = LETTERBOX_DATA;
+    if (letter_box) args.type = LETTERBOX_DATA;
+    else args.type = IMAGE_DATA;
 
     //const float thresh_calc_avg_iou = 0.24;
     float avg_iou = 0;
@@ -777,14 +783,12 @@ float validate_detector_map(char *datacfg, char *cfgfile, char *weightfile, floa
             float hier_thresh = 0;
             detection *dets;
             if (args.type == LETTERBOX_DATA) {
-                int letterbox = 1;
-                dets = get_network_boxes(&net, val[t].w, val[t].h, thresh, hier_thresh, 0, 1, &nboxes, letterbox);
+                dets = get_network_boxes(&net, val[t].w, val[t].h, thresh, hier_thresh, 0, 1, &nboxes, letter_box);
             }
             else {
-                int letterbox = 0;
-                dets = get_network_boxes(&net, 1, 1, thresh, hier_thresh, 0, 0, &nboxes, letterbox);
+                dets = get_network_boxes(&net, 1, 1, thresh, hier_thresh, 0, 0, &nboxes, letter_box);
             }
-            //detection *dets = get_network_boxes(&net, val[t].w, val[t].h, thresh, hier_thresh, 0, 1, &nboxes, letterbox); // for letterbox=1
+            //detection *dets = get_network_boxes(&net, val[t].w, val[t].h, thresh, hier_thresh, 0, 1, &nboxes, letter_box); // for letter_box=1
             if (nms) do_nms_sort(dets, nboxes, l.classes, nms);
 
             char labelpath[4096];
@@ -990,7 +994,7 @@ float validate_detector_map(char *datacfg, char *cfgfile, char *weightfile, floa
 
         // MS COCO - uses 101-Recall-points on PR-chart.
         // PascalVOC2007 - uses 11-Recall-points on PR-chart.
-        // PascalVOC2010–2012 - uses Area-Under-Curve on PR-chart.
+        // PascalVOC2010-2012 - uses Area-Under-Curve on PR-chart.
         // ImageNet - uses Area-Under-Curve on PR-chart.
 
         // correct mAP calculation: ImageNet, PascalVOC 2010-2012
@@ -1045,10 +1049,10 @@ float validate_detector_map(char *datacfg, char *cfgfile, char *weightfile, floa
     const float cur_precision = (float)tp_for_thresh / ((float)tp_for_thresh + (float)fp_for_thresh);
     const float cur_recall = (float)tp_for_thresh / ((float)tp_for_thresh + (float)(unique_truth_count - tp_for_thresh));
     const float f1_score = 2.F * cur_precision * cur_recall / (cur_precision + cur_recall);
-    printf("\n for thresh = %1.2f, precision = %1.2f, recall = %1.2f, F1-score = %1.2f \n",
+    printf("\n for conf_thresh = %1.2f, precision = %1.2f, recall = %1.2f, F1-score = %1.2f \n",
         thresh_calc_avg_iou, cur_precision, cur_recall, f1_score);
 
-    printf(" for thresh = %0.2f, TP = %d, FP = %d, FN = %d, average IoU = %2.2f %% \n",
+    printf(" for conf_thresh = %0.2f, TP = %d, FP = %d, FN = %d, average IoU = %2.2f %% \n",
         thresh_calc_avg_iou, tp_for_thresh, fp_for_thresh, unique_truth_count - tp_for_thresh, avg_iou * 100);
 
     mean_average_precision = mean_average_precision / classes;
@@ -1480,7 +1484,7 @@ void run_detector(int argc, char **argv)
     else if (0 == strcmp(argv[2], "train")) train_detector(datacfg, cfg, weights, gpus, ngpus, clear, dont_show, calc_map, mjpeg_port, show_imgs);
     else if (0 == strcmp(argv[2], "valid")) validate_detector(datacfg, cfg, weights, outfile);
     else if (0 == strcmp(argv[2], "recall")) validate_detector_recall(datacfg, cfg, weights);
-    else if (0 == strcmp(argv[2], "map")) validate_detector_map(datacfg, cfg, weights, thresh, iou_thresh, map_points, NULL);
+    else if (0 == strcmp(argv[2], "map")) validate_detector_map(datacfg, cfg, weights, thresh, iou_thresh, map_points, letter_box, NULL);
     else if (0 == strcmp(argv[2], "calc_anchors")) calc_anchors(datacfg, num_of_clusters, width, height, show);
     else if (0 == strcmp(argv[2], "demo")) {
         list *options = read_data_cfg(datacfg);

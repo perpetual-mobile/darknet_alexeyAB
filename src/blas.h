@@ -27,6 +27,7 @@ void mul_cpu(int N, float *X, int INCX, float *Y, int INCY);
 void axpy_cpu(int N, float ALPHA, float *X, int INCX, float *Y, int INCY);
 void copy_cpu(int N, float *X, int INCX, float *Y, int INCY);
 void scal_cpu(int N, float ALPHA, float *X, int INCX);
+void scal_add_cpu(int N, float ALPHA, float BETA, float *X, int INCX);
 void fill_cpu(int N, float ALPHA, float * X, int INCX);
 float dot_cpu(int N, float *X, int INCX, float *Y, int INCY);
 void test_gpu_blas();
@@ -61,6 +62,7 @@ void simple_copy_ongpu(int size, float *src, float *dst);
 void copy_ongpu(int N, float * X, int INCX, float * Y, int INCY);
 void copy_ongpu_offset(int N, float * X, int OFFX, int INCX, float * Y, int OFFY, int INCY);
 void scal_ongpu(int N, float ALPHA, float * X, int INCX);
+void scal_add_ongpu(int N, float ALPHA, float BETA, float * X, int INCX);
 void supp_ongpu(int N, float ALPHA, float * X, int INCX);
 void mask_gpu_new_api(int N, float * X, float mask_num, float * mask, float val);
 void mask_ongpu(int N, float * X, float mask_num, float * mask);
@@ -114,6 +116,11 @@ int is_nan_or_inf(float *input, size_t size);
 void add_3_arrays_activate(float *a1, float *a2, float *a3, size_t size, ACTIVATION a, float *dst);
 void sum_of_mults(float *a1, float *a2, float *b1, float *b2, size_t size, float *dst);
 void activate_and_mult(float *a1, float *a2, size_t size, ACTIVATION a, float *dst);
+
+void scale_channels_gpu(float *in_w_h_c, int size, int channel_size, float *scales_c, float *out);
+void backward_scale_channels_gpu(float *in_w_h_c_delta, int size, int channel_size,
+    float *in_scales_c, float *out_from_delta,
+    float *in_from_output, float *out_state_delta);
 
 #endif
 #ifdef __cplusplus

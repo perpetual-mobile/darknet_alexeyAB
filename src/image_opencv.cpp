@@ -1137,7 +1137,7 @@ static box float_to_box_stride(float *f, int stride)
 
 image image_data_augmentation(mat_cv* mat, int w, int h,
     int pleft, int ptop, int swidth, int sheight, int flip,
-    float jitter, float dhue, float dsat, float dexp,
+    float dhue, float dsat, float dexp,
     int blur, int num_boxes, float *truth)
 {
     image out;
@@ -1236,6 +1236,14 @@ image image_data_augmentation(mat_cv* mat, int w, int h,
         out = mat_to_image(*(cv::Mat*)mat);
     }
     return out;
+}
+
+// blend two images with (alpha and beta)
+void blend_images_cv(image new_img, float alpha, image old_img, float beta)
+{
+    cv::Mat new_mat(cv::Size(new_img.w, new_img.h), CV_32FC(new_img.c), new_img.data);// , size_t step = AUTO_STEP)
+    cv::Mat old_mat(cv::Size(old_img.w, old_img.h), CV_32FC(old_img.c), old_img.data);
+    cv::addWeighted(new_mat, alpha, old_mat, beta, 0.0, new_mat);
 }
 
 // ====================================================================

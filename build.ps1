@@ -1,19 +1,7 @@
 #!/usr/bin/env pwsh
 
 $number_of_build_workers=8
-$force_using_include_libs=$false
-
-#$my_cuda_compute_model=75    #Compute capability for Tesla T4, RTX 2080
-#$my_cuda_compute_model=72    #Compute capability for Jetson Xavier
-#$my_cuda_compute_model=70    #Compute capability for Tesla V100
-#$my_cuda_compute_model=62    #Compute capability for Jetson TX2
-#$my_cuda_compute_model=61    #Compute capability for Tesla P40
-#$my_cuda_compute_model=60    #Compute capability for Tesla P100
-#$my_cuda_compute_model=53    #Compute capability for Jetson TX1
-#$my_cuda_compute_model=52    #Compute capability for Tesla M40/M60
-#$my_cuda_compute_model=37    #Compute capability for Tesla K80
-#$my_cuda_compute_model=35    #Compute capability for Tesla K20/K40
-#$my_cuda_compute_model=30    #Compute capability for Tesla K10, Quadro K4000
+$use_vcpkg=$true
 
 function getProgramFiles32bit() {
   $out = ${env:PROGRAMFILES(X86)}
@@ -84,27 +72,27 @@ function getLatestVisualStudioWithDesktopWorkloadVersion() {
 }
 
 
-if ((Test-Path env:VCPKG_ROOT) -and -not $force_using_include_libs) {
+if ((Test-Path env:VCPKG_ROOT) -and $use_vcpkg) {
   $vcpkg_path = "$env:VCPKG_ROOT"
   Write-Host "Found vcpkg in VCPKG_ROOT: $vcpkg_path"
 }
-elseif ((Test-Path "${env:WORKSPACE}\vcpkg") -and -not $force_using_include_libs) {
+elseif ((Test-Path "${env:WORKSPACE}\vcpkg") -and $use_vcpkg) {
   $vcpkg_path = "${env:WORKSPACE}\vcpkg"
   Write-Host "Found vcpkg in WORKSPACE\vcpkg: $vcpkg_path"
 }
 else {
-  Write-Host "Skipping vcpkg-enabled builds because the VCPKG_ROOT environment variable is not defined, using self-distributed libs`n" -ForegroundColor Yellow
+  Write-Host "Skipping vcpkg-enabled builds because the VCPKG_ROOT environment variable is not defined or you requested to avoid VCPKG, using self-distributed libs`n" -ForegroundColor Yellow
 }
 
-if ($null -eq $env:VCPKG_DEFAULT_TRIPLET) {
+if ($null -eq $env:VCPKG_DEFAULT_TRIPLET -and $use_vcpkg) {
   Write-Host "No default triplet has been set-up for vcpkg. Defaulting to x64-windows" -ForegroundColor Yellow
   $vcpkg_triplet = "x64-windows"
 }
-else {
+elseif ($use_vcpkg) {
   $vcpkg_triplet = $env:VCPKG_DEFAULT_TRIPLET
 }
 
-if ($vcpkg_triplet -Match "x86") {
+if ($vcpkg_triplet -Match "x86" -and $use_vcpkg) {
   Throw "darknet is supported only in x64 builds!"
 }
 
@@ -153,17 +141,10 @@ if (Test-Path env:CUDA_PATH) {
     $env:CUDA_TOOLKIT_ROOT_DIR = "${env:CUDA_PATH}"
     Write-Host "Added missing env variable CUDA_TOOLKIT_ROOT_DIR" -ForegroundColor Yellow
   }
-  if ($my_cuda_compute_model) {
-    $additional_build_setup = "-DCUDA_COMPUTE_MODEL=${my_cuda_compute_model}"
-    Write-Host "Using compute capability ${my_cuda_compute_model}" -ForegroundColor Yellow
-  }
-  else {
-    Write-Host "Using default compute capability" -ForegroundColor Yellow
-  }
 }
 
 
-if ($vcpkg_path) {
+if ($use_vcpkg) {
   ## DEBUG
   #New-Item -Path .\build_win_debug -ItemType directory -Force
   #Set-Location build_win_debug
@@ -172,6 +153,7 @@ if ($vcpkg_path) {
   ##cmake --build . --config Debug --parallel ${number_of_build_workers} --target install  #valid only for CMake 3.12+
   #Remove-Item DarknetConfig.cmake
   #Remove-Item DarknetConfigVersion.cmake
+  #Copy-Item Debug\*.dll ..
   #Set-Location ..
   #Copy-Item cmake\Modules\*.cmake share\darknet\
 
@@ -183,7 +165,7 @@ if ($vcpkg_path) {
   #cmake --build . --config Release --parallel ${number_of_build_workers} --target install  #valid only for CMake 3.12+
   Remove-Item DarknetConfig.cmake
   Remove-Item DarknetConfigVersion.cmake
-  Copy-Item *.dll ..
+  Copy-Item Release\*.dll ..
   Set-Location ..
   Copy-Item cmake\Modules\*.cmake share\darknet\
 }
