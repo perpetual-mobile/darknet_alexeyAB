@@ -91,6 +91,13 @@ pthread_t load_data_in_thread(load_args args);
     data load_data_old(char **paths, int n, int m, char **labels, int k, int w, int h);
     data load_data_detection(int n, char **paths, int m, int w, int h, int c, int boxes, int classes, int use_flip, int use_blur, int use_mixup,
                              float jitter, float hue, float saturation, float exposure, int mini_batch, int track, int augment_speed, int letter_box, int show_imgs);
+
+    /***** load rotated original images******/
+    void place_image(image im, int w, int h, int dx, int dy, image canvas);
+    void set_pixel(image m, int x, int y, int c, float val);
+    image rotate_image_r(image im, float rad);
+    data load_data_detection2(int n, char **paths, int m, int w, int h, int boxes, int classes, float jitter, float hue, float saturation, float exposure, float angle);
+
     data load_data_tag(char **paths, int n, int m, int k, int use_flip, int min, int max, int size, float angle, float aspect, float hue, float saturation, float exposure);
     matrix load_image_augment_paths(char **paths, int n, int use_flip, int min, int max, int size, float angle, float aspect, float hue, float saturation, float exposure);
     data load_data_super(char **paths, int n, int m, int w, int h, int scale);
