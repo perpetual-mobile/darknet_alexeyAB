@@ -8,7 +8,9 @@
 #include <string.h>
 
 #define NUMCHARS 37
-#define TWO_PI 2 * acos(-1.0)
+#define PI acos(-1.0)
+#define MIN(a, b) (((a) < (b)) ? (a) : (b))
+#define MAX(a, b) (((a) > (b)) ? (a) : (b))
 
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 
@@ -488,10 +490,11 @@ void fill_truth_detection2(char *path, int num_boxes, float *truth, int classes,
     find_replace(labelpath, ".JPEG", ".txt", labelpath);
     int count = 0;
     float x, y, w, h;
+    float tx1, tx2, ty1, ty2, x1, x2, y1, y2, offset_x, offset_y;
     int id;
     int i;
-    rad = TWO_PI / 4;
-    printf("angle: %f\n", rad);
+    //rad = PI / 2;
+    //printf("angle: %f\n", rad);
 
     box_label *boxes = read_boxes(labelpath, &count);
     randomize_boxes(boxes, count);
@@ -501,30 +504,42 @@ void fill_truth_detection2(char *path, int num_boxes, float *truth, int classes,
 
     for (i = 0; i < count; ++i)
     {
+        printf("w: %f, h: %f, left : %f, top: %f, right: %f, bottom: %f, (%f,%f)\n\n", boxes[i].w, boxes[i].h, boxes[i].left, boxes[i].top, boxes[i].right, boxes[i].bottom, boxes[i].x, boxes[i].y);
+
         tx = boxes[i].x * im.h;
         ty = boxes[i].y * im.w;
 
-        // tx = boxes[i].x;
-        // ty = boxes[i].y;
+        // edges
+        tx1 = boxes[i].left * im.h;
+        tx2 = boxes[i].right * im.h;
+        ty1 = boxes[i].top * im.w;
+        ty2 = boxes[i].bottom * im.w;
+
+        x1 = (cos(rad) * (tx1 - im.h / 2) - sin(rad) * (ty1 - im.w / 2) + im.w / 2) / im.w;
+        y1 = (sin(rad) * (tx1 - im.h / 2) + cos(rad) * (ty1 - im.w / 2) + im.h / 2) / im.h;
+        x2 = (cos(rad) * (tx2 - im.h / 2) - sin(rad) * (ty2 - im.w / 2) + im.w / 2) / im.w;
+        y2 = (sin(rad) * (tx2 - im.h / 2) + cos(rad) * (ty2 - im.w / 2) + im.h / 2) / im.h;
 
         x = (cos(rad) * (tx - im.h / 2) - sin(rad) * (ty - im.w / 2) + im.w / 2) / im.w;
         y = (sin(rad) * (tx - im.h / 2) + cos(rad) * (ty - im.w / 2) + im.h / 2) / im.h;
 
-        // x = (cos(rad) * (tx - (im.w / 2)) - sin(rad) * (ty - (im.h / 2)) + (im.w / 2));
-        // y = (sin(rad) * (tx - (im.w / 2)) + cos(rad) * (ty - (im.h / 2)) + (im.h / 2));
+        // offset_x = fabs(x - tx);
+        // offset_y = fabs(y - ty);
 
         boxes[i].x = x;
         boxes[i].y = y;
 
-        w = boxes[i].h;
-        h = boxes[i].w;
-        boxes[i].w = w;
-        boxes[i].h = h;
+        w = MAX(x1, x2) - MIN(x1, x2);
+        h = MAX(y1, y2) - MIN(y1, y2);
+        // boxes[i].w = w;
+        // boxes[i].h = h;
 
-        boxes[i].left = x - w / 2;
-        boxes[i].right = x + w / 2;
-        boxes[i].top = y - h / 2;
-        boxes[i].bottom = y + h / 2;
+        boxes[i].left = MIN(x1, x2);
+        boxes[i].right = MAX(x1, x2);
+        boxes[i].top = MIN(y1, y2);
+        boxes[i].bottom = MAX(y1, y2);
+
+        printf("## w: %f, h: %f, left : %f, top: %f, right: %f, bottom: %f, (%f,%f) ##\n\n", w, h, boxes[i].left, boxes[i].top, boxes[i].right, boxes[i].bottom, x, y);
     }
 
     correct_boxes(boxes, count, dx, dy, sx, sy, flip);
@@ -548,6 +563,7 @@ void fill_truth_detection2(char *path, int num_boxes, float *truth, int classes,
         draw_box_width(im, boxes[i].x * im.w - boxes[i].w * im.w / 2, boxes[i].y * im.h - boxes[i].h * im.h / 2, boxes[i].x * im.w + boxes[i].w * im.w / 2, boxes[i].y * im.h + boxes[i].h * im.h / 2, 4, 0.1, 0.4, 0.6);
         save_image(im, "draw");
     }
+    printf("---------");
     free(boxes);
 }
 
@@ -1297,7 +1313,7 @@ data load_data_detection(int n, char **paths, int m, int w, int h, int c, int bo
             d.X.vals[i] = sized.data;
             memcpy(d.y.vals[i], truth, 5 * boxes * sizeof(float));
 
-            if (show_imgs) // && i_mixup)
+            if (show_imgs || 1) // && i_mixup)
             {
                 char buff[1000];
                 sprintf(buff, "aug_%d_%d_%s_%d", random_index, i, basecfg(filename), random_gen());
@@ -1389,6 +1405,7 @@ image rotate_image_r(image im, float rad)
 data load_data_detection2(int n, char **paths, int m, int w, int h, int boxes, int classes, float jitter, float hue, float saturation, float exposure, float angle)
 {
     //printf("load_data_detection2 angle: %f", angle);
+    angle = 45;
     char **random_paths = get_random_paths(paths, n, m);
     int i;
     data d = {0};
@@ -1401,18 +1418,20 @@ data load_data_detection2(int n, char **paths, int m, int w, int h, int boxes, i
     d.y = make_matrix(n, 5 * boxes);
     for (i = 0; i < n; ++i)
     {
-        image orig0 = load_image_color(random_paths[i], 0, 0);
+        image orig = load_image_color(random_paths[i], 0, 0);
         float random_angle = rand_uniform(angle, angle);
-        float random_angle_rad = TWO_PI * random_angle / 360.0; //  degree to radian
-        image orig = rotate_image_r(orig0, random_angle_rad);
-        image sized = make_image(w, h, orig.c);
+        float random_angle_rad = PI * random_angle / 180.0; //  degree to radian
+        image rotated = rotate_image_r(orig, random_angle_rad);
+        image sized = make_image(w, h, rotated.c);
         fill_image(sized, .5);
 
-        float dw = jitter * orig.w;
-        float dh = jitter * orig.h;
+        float dw = jitter * rotated.w;
+        float dh = jitter * rotated.h;
 
-        float new_ar = (orig.w + rand_uniform(-dw, dw)) / (orig.h + rand_uniform(-dh, dh));
+        float new_ar = (rotated.w + rand_uniform(-dw, dw)) / (rotated.h + rand_uniform(-dh, dh));
         float scale = rand_uniform(.25, 2);
+
+        printf("scale: %f", scale);
 
         float nw, nh;
 
@@ -1430,7 +1449,7 @@ data load_data_detection2(int n, char **paths, int m, int w, int h, int boxes, i
         float dx = rand_uniform(0, w - nw);
         float dy = rand_uniform(0, h - nh);
 
-        place_image(orig, nw, nh, dx, dy, sized);
+        place_image(rotated, nw, nh, dx, dy, sized);
 
         random_distort_image(sized, hue, saturation, exposure);
         int flip = rand() % 2;
@@ -1438,14 +1457,28 @@ data load_data_detection2(int n, char **paths, int m, int w, int h, int boxes, i
             flip_image(sized);
         d.X.vals[i] = sized.data;
 
-        printf("enter fill_truth_detection2\n");
+        fill_truth_detection2(random_paths[i], boxes, d.y.vals[i], classes, flip, -dx / w, -dy / h, nw / w, nh / h, rotated, random_angle_rad);
 
-        fill_truth_detection2(random_paths[i], boxes, d.y.vals[i], classes, flip, -dx / w, -dy / h, nw / w, nh / h, orig, random_angle_rad);
+        char buff[1000];
+        sprintf(buff, "aug_%d_%d_%s_%d", i, i, "asdf", random_gen());
 
-        printf("leave fill_truth_detection2\n");
+        int t;
+        for (t = 0; t < boxes; ++t)
+        {
+            box b = float_to_box_stride(d.y.vals[i] + t * (4 + 1), 1);
+            if (!b.x)
+                break;
+            int left = (b.x - b.w / 2.) * sized.w;
+            int right = (b.x + b.w / 2.) * sized.w;
+            int top = (b.y - b.h / 2.) * sized.h;
+            int bot = (b.y + b.h / 2.) * sized.h;
+            draw_box_width(sized, left, top, right, bot, 1, 150, 100, 50); // 3 channels RGB
+        }
 
+        save_image(sized, buff);
+
+        free_image(rotated);
         free_image(orig);
-        free_image(orig0);
     }
     free(random_paths);
     return d;
