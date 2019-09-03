@@ -42,3 +42,8 @@ src/version.h
 lib/
 share/
 include/darknet/
+
+__pycache__/
+*.pyc
+darknet
+uselib
