@@ -178,14 +178,8 @@ void demo(char *cfgfile, char *weightfile, float thresh, float hier_thresh, int 
 
     int count = 0;
     if(!prefix && !dont_show){
-<<<<<<< HEAD
-        //cvNamedWindow("Demo", CV_WINDOW_NORMAL);
-        //cvMoveWindow("Demo", 0, 0);
-        //cvResizeWindow("Demo", 1352, 1013);
-=======
         int full_screen = 0;
         create_window_cv("Demo", full_screen, 1352, 1013);
->>>>>>> 55dcd1bcb8d83f27c9118a9a4684ad73190e2ca3
     }
 
 
@@ -238,9 +232,9 @@ void demo(char *cfgfile, char *weightfile, float thresh, float hier_thresh, int 
             printf("\nFPS:%.1f\n", fps);
 
             if(!prefix){
-                if (!dont_show && 0) {
-                    show_image_cv_ipl(show_img, "Demo");
-                    int c = cvWaitKey(1);
+                if (!dont_show) {
+                    show_image_mat(show_img, "Demo");
+                    int c = wait_key_cv(1);
                     if (c == 10) {
                         if (frame_skip == 0) frame_skip = 60;
                         else if (frame_skip == 4) frame_skip = 0;
