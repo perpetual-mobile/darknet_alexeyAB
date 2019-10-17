@@ -137,6 +137,7 @@ typedef enum {
     LOCAL,
     SHORTCUT,
     SCALE_CHANNELS,
+    SAM,
     ACTIVE,
     RNN,
     GRU,
@@ -207,7 +208,10 @@ struct layer {
     int size;
     int side;
     int stride;
+    int stride_x;
+    int stride_y;
     int dilation;
+    int antialiasing;
     int maxpool_depth;
     int out_channels;
     int reverse;
@@ -277,6 +281,7 @@ struct layer {
     float focus;
     int classfix;
     int absolute;
+    int assisted_excitation;
 
     int onlyforward;
     int stopbackward;
@@ -524,6 +529,7 @@ struct layer {
     float * scale_updates_gpu;
     float * scale_change_gpu;
 
+    float * input_antialiasing_gpu;
     float * output_gpu;
     float * output_sigmoid_gpu;
     float * loss_gpu;
@@ -531,6 +537,9 @@ struct layer {
     float * rand_gpu;
     float * squared_gpu;
     float * norms_gpu;
+
+    float *gt_gpu;
+    float *a_avg_gpu;
 #ifdef CUDNN
     cudnnTensorDescriptor_t srcTensorDesc, dstTensorDesc;
     cudnnTensorDescriptor_t srcTensorDesc16, dstTensorDesc16;
@@ -579,6 +588,8 @@ typedef struct network {
     int time_steps;
     int step;
     int max_batches;
+    int num_boxes;
+    int train_images_num;
     float *seq_scales;
     float *scales;
     int   *steps;

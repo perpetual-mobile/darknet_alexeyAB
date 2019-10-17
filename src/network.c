@@ -32,6 +32,7 @@
 #include "dropout_layer.h"
 #include "route_layer.h"
 #include "shortcut_layer.h"
+#include "scale_channels_layer.h"
 #include "yolo_layer.h"
 #include "upsample_layer.h"
 #include "parser.h"
@@ -211,6 +212,10 @@ char *get_layer_string(LAYER_TYPE a)
             return "route";
         case SHORTCUT:
             return "shortcut";
+        case SCALE_CHANNELS:
+            return "scale_channels";
+        case SAM:
+            return "sam";
         case NORMALIZATION:
             return "normalization";
         case BATCHNORM:
@@ -523,6 +528,8 @@ int resize_network(network *net, int w, int h)
             resize_route_layer(&l, net);
         }else if (l.type == SHORTCUT) {
             resize_shortcut_layer(&l, w, h);
+        //}else if (l.type == SCALE_CHANNELS) {
+        //    resize_scale_channels_layer(&l, w, h);
         }else if (l.type == UPSAMPLE) {
             resize_upsample_layer(&l, w, h);
         }else if(l.type == REORG){
@@ -1026,6 +1033,10 @@ void fuse_conv_batchnorm(network net)
         if (l->type == CONVOLUTIONAL) {
             //printf(" Merges Convolutional-%d and batch_norm \n", j);
 
+            if (l->share_layer != NULL) {
+                l->batch_normalize = 0;
+            }
+
             if (l->batch_normalize) {
                 int f;
                 for (f = 0; f < l->n; ++f)
@@ -1138,6 +1149,13 @@ void copy_weights_net(network net_train, network *net_map)
             copy_cudnn_descriptors(tmp_input_layer, net_map->layers[k].input_layer);
             copy_cudnn_descriptors(tmp_self_layer, net_map->layers[k].self_layer);
             copy_cudnn_descriptors(tmp_output_layer, net_map->layers[k].output_layer);
+        }
+        else if(l->input_layer) // for AntiAliasing
+        {
+            layer tmp_input_layer;
+            copy_cudnn_descriptors(*net_map->layers[k].input_layer, &tmp_input_layer);
+            net_map->layers[k].input_layer = net_train.layers[k].input_layer;
+            copy_cudnn_descriptors(tmp_input_layer, net_map->layers[k].input_layer);
         }
         net_map->layers[k].batch = 1;
         net_map->layers[k].steps = 1;

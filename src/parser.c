@@ -32,6 +32,7 @@
 #include "route_layer.h"
 #include "shortcut_layer.h"
 #include "scale_channels_layer.h"
+#include "sam_layer.h"
 #include "softmax_layer.h"
 #include "utils.h"
 #include "upsample_layer.h"
@@ -50,6 +51,7 @@ LAYER_TYPE string_to_layer_type(char * type)
 
     if (strcmp(type, "[shortcut]")==0) return SHORTCUT;
     if (strcmp(type, "[scale_channels]") == 0) return SCALE_CHANNELS;
+    if (strcmp(type, "[sam]") == 0) return SAM;
     if (strcmp(type, "[crop]")==0) return CROP;
     if (strcmp(type, "[cost]")==0) return COST;
     if (strcmp(type, "[detection]")==0) return DETECTION;
@@ -156,7 +158,10 @@ convolutional_layer parse_convolutional(list *options, size_params params, netwo
     int groups = option_find_int_quiet(options, "groups", 1);
     int size = option_find_int(options, "size",1);
     int stride = option_find_int(options, "stride",1);
+    int stride_x = option_find_int_quiet(options, "stride_x", stride);
+    int stride_y = option_find_int_quiet(options, "stride_y", stride);
     int dilation = option_find_int_quiet(options, "dilation", 1);
+    int antialiasing = option_find_int_quiet(options, "antialiasing", 0);
     if (size == 1) dilation = 1;
     int pad = option_find_int_quiet(options, "pad",0);
     int padding = option_find_int_quiet(options, "padding",0);
@@ -165,9 +170,12 @@ convolutional_layer parse_convolutional(list *options, size_params params, netwo
     char *activation_s = option_find_str(options, "activation", "logistic");
     ACTIVATION activation = get_activation(activation_s);
 
-    int share_index = option_find_int_quiet(options, "share_index", -1);
+    int assisted_excitation = option_find_float_quiet(options, "assisted_excitation", 0);
+
+    int share_index = option_find_int_quiet(options, "share_index", -1000000000);
     convolutional_layer *share_layer = NULL;
-    if(share_layer > -1) share_layer = &net.layers[share_index];
+    if(share_index >= 0) share_layer = &net.layers[share_index];
+    else if(share_index != -1000000000) share_layer = &net.layers[params.index + share_index];
 
     int batch,h,w,c;
     h = params.h;
@@ -180,9 +188,10 @@ convolutional_layer parse_convolutional(list *options, size_params params, netwo
     int xnor = option_find_int_quiet(options, "xnor", 0);
     int use_bin_output = option_find_int_quiet(options, "bin_output", 0);
 
-    convolutional_layer layer = make_convolutional_layer(batch,1,h,w,c,n,groups,size,stride,dilation,padding,activation, batch_normalize, binary, xnor, params.net.adam, use_bin_output, params.index, share_layer);
+    convolutional_layer layer = make_convolutional_layer(batch,1,h,w,c,n,groups,size,stride_x,stride_y,dilation,padding,activation, batch_normalize, binary, xnor, params.net.adam, use_bin_output, params.index, antialiasing, share_layer, assisted_excitation);
     layer.flipped = option_find_int_quiet(options, "flipped", 0);
     layer.dot = option_find_float_quiet(options, "dot", 0);
+
 
     if(params.net.adam){
         layer.B1 = params.net.B1;
@@ -532,10 +541,13 @@ layer parse_reorg_old(list *options, size_params params)
 maxpool_layer parse_maxpool(list *options, size_params params)
 {
     int stride = option_find_int(options, "stride",1);
+    int stride_x = option_find_int_quiet(options, "stride_x", stride);
+    int stride_y = option_find_int_quiet(options, "stride_y", stride);
     int size = option_find_int(options, "size",stride);
     int padding = option_find_int_quiet(options, "padding", size-1);
     int maxpool_depth = option_find_int_quiet(options, "maxpool_depth", 0);
     int out_channels = option_find_int_quiet(options, "out_channels", 1);
+    int antialiasing = option_find_int_quiet(options, "antialiasing", 0);
 
     int batch,h,w,c;
     h = params.h;
@@ -544,7 +556,7 @@ maxpool_layer parse_maxpool(list *options, size_params params)
     batch=params.batch;
     if(!(h && w && c)) error("Layer before maxpool layer must output image.");
 
-    maxpool_layer layer = make_maxpool_layer(batch, h, w, c, size, stride, padding, maxpool_depth, out_channels);
+    maxpool_layer layer = make_maxpool_layer(batch, h, w, c, size, stride_x, stride_y, padding, maxpool_depth, out_channels, antialiasing);
     return layer;
 }
 
@@ -589,14 +601,16 @@ layer parse_batchnorm(list *options, size_params params)
 
 layer parse_shortcut(list *options, size_params params, network net)
 {
+    int assisted_excitation = option_find_float_quiet(options, "assisted_excitation", 0);
     char *l = option_find(options, "from");
     int index = atoi(l);
     if(index < 0) index = params.index + index;
 
     int batch = params.batch;
     layer from = net.layers[index];
+    if (from.antialiasing) from = *from.input_layer;
 
-    layer s = make_shortcut_layer(batch, index, params.w, params.h, params.c, from.out_w, from.out_h, from.out_c);
+    layer s = make_shortcut_layer(batch, index, params.w, params.h, params.c, from.out_w, from.out_h, from.out_c, assisted_excitation);
 
     char *activation_s = option_find_str(options, "activation", "linear");
     ACTIVATION activation = get_activation(activation_s);
@@ -615,6 +629,23 @@ layer parse_scale_channels(list *options, size_params params, network net)
     layer from = net.layers[index];
 
     layer s = make_scale_channels_layer(batch, index, params.w, params.h, params.c, from.out_w, from.out_h, from.out_c);
+
+    char *activation_s = option_find_str_quiet(options, "activation", "linear");
+    ACTIVATION activation = get_activation(activation_s);
+    s.activation = activation;
+    return s;
+}
+
+layer parse_sam(list *options, size_params params, network net)
+{
+    char *l = option_find(options, "from");
+    int index = atoi(l);
+    if (index < 0) index = params.index + index;
+
+    int batch = params.batch;
+    layer from = net.layers[index];
+
+    layer s = make_sam_layer(batch, index, params.w, params.h, params.c, from.out_w, from.out_h, from.out_c);
 
     char *activation_s = option_find_str_quiet(options, "activation", "linear");
     ACTIVATION activation = get_activation(activation_s);
@@ -923,6 +954,11 @@ network parse_network_cfg_custom(char *filename, int batch, int time_steps)
             l = parse_scale_channels(options, params, net);
             net.layers[count - 1].use_bin_output = 0;
             net.layers[l.index].use_bin_output = 0;
+        }
+        else if (lt == SAM) {
+            l = parse_sam(options, params, net);
+            net.layers[count - 1].use_bin_output = 0;
+            net.layers[l.index].use_bin_output = 0;
         }else if(lt == DROPOUT){
             l = parse_dropout(options, params);
             l.output = net.layers[count-1].output;
@@ -961,10 +997,18 @@ network parse_network_cfg_custom(char *filename, int batch, int time_steps)
         n = n->next;
         ++count;
         if(n){
-            params.h = l.out_h;
-            params.w = l.out_w;
-            params.c = l.out_c;
-            params.inputs = l.outputs;
+            if (l.antialiasing) {
+                params.h = l.input_layer->out_h;
+                params.w = l.input_layer->out_w;
+                params.c = l.input_layer->out_c;
+                params.inputs = l.input_layer->outputs;
+            }
+            else {
+                params.h = l.out_h;
+                params.w = l.out_w;
+                params.c = l.out_c;
+                params.inputs = l.outputs;
+            }
         }
         if (l.bflops > 0) bflops += l.bflops;
     }
@@ -1307,12 +1351,17 @@ void load_convolutional_weights(layer l, FILE *fp)
         //return;
     }
     int num = l.nweights;
-    fread(l.biases, sizeof(float), l.n, fp);
+    int read_bytes;
+    read_bytes = fread(l.biases, sizeof(float), l.n, fp);
+    if (read_bytes > 0 && read_bytes < l.n) printf("\n Warning: Unexpected end of wights-file! l.biases - l.index = %d \n", l.index);
     //fread(l.weights, sizeof(float), num, fp); // as in connected layer
     if (l.batch_normalize && (!l.dontloadscales)){
-        fread(l.scales, sizeof(float), l.n, fp);
-        fread(l.rolling_mean, sizeof(float), l.n, fp);
-        fread(l.rolling_variance, sizeof(float), l.n, fp);
+        read_bytes = fread(l.scales, sizeof(float), l.n, fp);
+        if (read_bytes > 0 && read_bytes < l.n) printf("\n Warning: Unexpected end of wights-file! l.scales - l.index = %d \n", l.index);
+        read_bytes = fread(l.rolling_mean, sizeof(float), l.n, fp);
+        if (read_bytes > 0 && read_bytes < l.n) printf("\n Warning: Unexpected end of wights-file! l.rolling_mean - l.index = %d \n", l.index);
+        read_bytes = fread(l.rolling_variance, sizeof(float), l.n, fp);
+        if (read_bytes > 0 && read_bytes < l.n) printf("\n Warning: Unexpected end of wights-file! l.rolling_variance - l.index = %d \n", l.index);
         if(0){
             int i;
             for(i = 0; i < l.n; ++i){
@@ -1329,7 +1378,8 @@ void load_convolutional_weights(layer l, FILE *fp)
             fill_cpu(l.n, 0, l.rolling_variance, 1);
         }
     }
-    fread(l.weights, sizeof(float), num, fp);
+    read_bytes = fread(l.weights, sizeof(float), num, fp);
+    if (read_bytes > 0 && read_bytes < l.n) printf("\n Warning: Unexpected end of wights-file! l.weights - l.index = %d \n", l.index);
     //if(l.adam){
     //    fread(l.m, sizeof(float), num, fp);
     //    fread(l.v, sizeof(float), num, fp);
@@ -1446,8 +1496,9 @@ void load_weights_upto(network *net, char *filename, int cutoff)
             }
 #endif
         }
+        if (feof(fp)) break;
     }
-    fprintf(stderr, "Done!\n");
+    fprintf(stderr, "Done! Loaded %d layers from weights-file \n", i);
     fclose(fp);
 }
 
