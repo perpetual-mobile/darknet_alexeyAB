@@ -21,6 +21,11 @@
             "environment": [],
             "externalConsole": true,
             "MIMode": "lldb",
+            "logging": {
+                "trace": true,
+                "traceResponse": true,
+                "engineLogging": true
+            }
         }
     ]
 }
