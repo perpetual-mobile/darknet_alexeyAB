@@ -13,10 +13,10 @@
                 "detector",
                 "train",
                 "data.txt",
-                "training.cfg2",
+                "training.cfg",
                 "yolov3-tiny.conv.15"
             ],
-            "stopAtEntry": true,
+            "stopAtEntry": false,
             "cwd": "${workspaceFolder}/../deeplearning",
             "environment": [],
             "externalConsole": true,
