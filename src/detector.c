@@ -104,7 +104,6 @@ void train_detector(char *datacfg, char *cfgfile, char *weightfile, int *gpus, i
     layer l = net.layers[net.n - 1];
 
     int classes = l.classes;
-    float jitter = l.jitter;
 
     list *plist = get_paths(train_images);
     int train_images_num = plist->size;
@@ -129,7 +128,8 @@ void train_detector(char *datacfg, char *cfgfile, char *weightfile, int *gpus, i
     args.m = plist->size;
     args.classes = classes;
     args.flip = net.flip;
-    args.jitter = jitter;
+    args.jitter = l.jitter;
+    args.resize = l.resize;
     args.num_boxes = l.max_boxes;
     net.num_boxes = args.num_boxes;
     net.train_images_num = train_images_num;
@@ -149,6 +149,8 @@ void train_detector(char *datacfg, char *cfgfile, char *weightfile, int *gpus, i
     args.show_imgs = show_imgs;
 
 #ifdef OPENCV
+    //int num_threads = get_num_threads();
+    //if(num_threads > 2) args.threads = get_num_threads() - 2;
     args.threads = 6 * ngpus;   // 3 for - Amazon EC2 Tesla V100: p3.2xlarge (8 logical cores) - p3.16xlarge
     //args.threads = 12 * ngpus;    // Ryzen 7 2700X (16 logical cores)
     mat_cv* img = NULL;
@@ -696,7 +698,8 @@ void validate_detector(char *datacfg, char *cfgfile, char *weightfile, char *out
     args.h = net.h;
     args.c = net.c;
     args.type = IMAGE_DATA;
-    //args.type = LETTERBOX_DATA;
+    const int letter_box = net.letter_box;
+    if (letter_box) args.type = LETTERBOX_DATA;
 
     for (t = 0; t < nthreads; ++t) {
         args.path = paths[i + t];
@@ -726,8 +729,7 @@ void validate_detector(char *datacfg, char *cfgfile, char *weightfile, char *out
             int w = val[t].w;
             int h = val[t].h;
             int nboxes = 0;
-            int letterbox = (args.type == LETTERBOX_DATA);
-            detection *dets = get_network_boxes(&net, w, h, thresh, .5, map, 0, &nboxes, letterbox);
+            detection *dets = get_network_boxes(&net, w, h, thresh, .5, map, 0, &nboxes, letter_box);
             if (nms) {
                 if (l.nms_kind == DEFAULT_NMS) do_nms_sort(dets, nboxes, l.classes, nms);
                 else diounms_sort(dets, nboxes, l.classes, nms, l.nms_kind, l.beta_nms);
