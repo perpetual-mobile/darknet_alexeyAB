@@ -1176,9 +1176,11 @@ float validate_detector_map(char *datacfg, char *cfgfile, char *weightfile, floa
 
     int rank;
     for (rank = 0; rank < detections_count; ++rank) {
+        /* too noisy:
         if (rank % 100 == 0)
             printf(" rank = %d of ranks = %d \r", rank, detections_count);
-
+        */
+       
         if (rank > 0) {
             int class_id;
             for (class_id = 0; class_id < classes; ++class_id) {
