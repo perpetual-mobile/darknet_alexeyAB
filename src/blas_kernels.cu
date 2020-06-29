@@ -1535,11 +1535,12 @@ __global__ void add_3_arrays_activate_kernel(float *a1, float *a2, float *a3, si
     const int index = blockIdx.x*blockDim.x + threadIdx.x;
     if (index < size) {
         float val = 0;
-        val += a1[index];
-        val += a2[index];
+        if (a1) val += a1[index];
+        if (a2) val += a2[index];
         if (a3) val += a3[index];
         if (a == LOGISTIC) val = 1.f / (1.f + expf(-val));
-        else if(a == TANH) val = (2 / (1 + expf(-2 * val)) - 1);
+        else if (a == TANH) val = (2 / (1 + expf(-2 * val)) - 1);
+        else if (a == LEAKY) val = (val < 0) ? val*0.1 : val;
         dst[index] = val;
     }
 }
@@ -1548,7 +1549,7 @@ extern "C" void add_3_arrays_activate(float *a1, float *a2, float *a3, size_t si
 {
     const int block_size = BLOCK;
     const int num_blocks = get_number_of_blocks(size, block_size);
-    if (a != LOGISTIC && a != TANH) {
+    if (!(a == LOGISTIC || a == TANH || a == LEAKY || a == LINEAR)) {
         printf(" add_3_arrays_activate() doesn't support activation %d, it supports only LOGISTIC and TANH \n", a);
         exit(EXIT_FAILURE);
     }
@@ -1578,6 +1579,7 @@ __global__ void activate_and_mult_kernel(float *a1, float *a2, size_t size, ACTI
     if (index < size) {
         float val = a1[index];
         if (a == TANH) val = (2 / (1 + expf(-2 * val)) - 1);
+        else if (a == LEAKY) val = (val < 0) ? val*0.1 : val;
         dst[index] = val * a2[index];
     }
 }
@@ -1586,7 +1588,7 @@ extern "C" void activate_and_mult(float *a1, float *a2, size_t size, ACTIVATION 
 {
     const int block_size = BLOCK;
     const int num_blocks = get_number_of_blocks(size, block_size);
-    if (a != TANH) {
+    if (!(a == TANH || a == LEAKY || a == LINEAR)) {
         printf(" activat_and_mult() doesn't support activation %d, it supports only TANH \n", a);
         exit(EXIT_FAILURE);
     }
@@ -2307,6 +2309,30 @@ extern "C" void expand_array_gpu(const float *src_gpu, float *dst_gpu, int size,
     const int block_size = BLOCK;
     const int num_blocks = get_number_of_blocks(current_size, block_size);
     expand_array_kernel << <num_blocks, block_size, 0, get_cuda_stream() >> > (src_gpu, dst_gpu, current_size, groups);
+
+    CHECK_CUDA(cudaPeekAtLastError());
+}
+
+
+
+__global__  void mult_inverse_array_kernel(const float *src_gpu, float *dst_gpu, int size, const float eps)
+{
+    const int index = blockIdx.x*blockDim.x + threadIdx.x;
+
+    if (index < size) {
+        float val = src_gpu[index];
+        float sign = 1;
+        if (val < 0) sign = -1;
+        if (fabs(val) < fabs(eps)) val = eps * sign;
+        dst_gpu[index] = eps * 1.0f / val;
+    }
+}
+
+extern "C" void mult_inverse_array_gpu(const float *src_gpu, float *dst_gpu, int size, float eps)
+{
+    const int block_size = BLOCK;
+    const int num_blocks = get_number_of_blocks(size, block_size);
+    mult_inverse_array_kernel << <num_blocks, block_size, 0, get_cuda_stream() >> > (src_gpu, dst_gpu, size, eps);
 
     CHECK_CUDA(cudaPeekAtLastError());
 }

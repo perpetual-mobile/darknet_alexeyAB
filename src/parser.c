@@ -86,6 +86,7 @@ LAYER_TYPE string_to_layer_type(char * type)
     if (strcmp(type, "[batchnorm]")==0) return BATCHNORM;
     if (strcmp(type, "[soft]")==0
             || strcmp(type, "[softmax]")==0) return SOFTMAX;
+    if (strcmp(type, "[contrastive]") == 0) return CONTRASTIVE;
     if (strcmp(type, "[route]")==0) return ROUTE;
     if (strcmp(type, "[upsample]") == 0) return UPSAMPLE;
     if (strcmp(type, "[empty]") == 0) return EMPTY;
@@ -226,6 +227,7 @@ convolutional_layer parse_convolutional(list *options, size_params params)
     layer.stretch_sway = stretch_sway;
     layer.angle = option_find_float_quiet(options, "angle", 15);
     layer.grad_centr = option_find_int_quiet(options, "grad_centr", 0);
+    layer.reverse = option_find_float_quiet(options, "reverse", 0);
 
     if(params.net.adam){
         layer.B1 = params.net.B1;
@@ -308,16 +310,21 @@ layer parse_conv_lstm(list *options, size_params params)
 
     int output_filters = option_find_int(options, "output", 1);
     int groups = option_find_int_quiet(options, "groups", 1);
-    char *activation_s = option_find_str(options, "activation", "LINEAR");
+    char *activation_s = option_find_str(options, "activation", "linear");
     ACTIVATION activation = get_activation(activation_s);
     int batch_normalize = option_find_int_quiet(options, "batch_normalize", 0);
     int xnor = option_find_int_quiet(options, "xnor", 0);
     int peephole = option_find_int_quiet(options, "peephole", 0);
+    int bottleneck = option_find_int_quiet(options, "bottleneck", 0);
 
-    layer l = make_conv_lstm_layer(params.batch, params.h, params.w, params.c, output_filters, groups, params.time_steps, size, stride, dilation, padding, activation, batch_normalize, peephole, xnor, params.train);
+    layer l = make_conv_lstm_layer(params.batch, params.h, params.w, params.c, output_filters, groups, params.time_steps, size, stride, dilation, padding, activation, batch_normalize, peephole, xnor, bottleneck, params.train);
 
     l.state_constrain = option_find_int_quiet(options, "state_constrain", params.time_steps * 32);
     l.shortcut = option_find_int_quiet(options, "shortcut", 0);
+
+    char *lstm_activation_s = option_find_str(options, "lstm_activation", "tanh");
+    l.lstm_activation = get_activation(lstm_activation_s);
+    l.time_normalizer = option_find_float_quiet(options, "time_normalizer", 1.0);
 
     return l;
 }
@@ -349,6 +356,14 @@ softmax_layer parse_softmax(list *options, size_params params)
 	return layer;
 }
 
+contrastive_layer parse_contrastive(list *options, size_params params)
+{
+    int classes = option_find_int(options, "classes", 1000);
+    contrastive_layer layer = make_contrastive_layer(params.batch, params.w, params.h, params.c, classes, params.inputs);
+    layer.temperature = option_find_float_quiet(options, "temperature", 1);
+    return layer;
+}
+
 int *parse_yolo_mask(char *a, int *num)
 {
     int *mask = 0;
@@ -371,7 +386,7 @@ int *parse_yolo_mask(char *a, int *num)
     return mask;
 }
 
-float *get_classes_multipliers(char *cpc, const int classes)
+float *get_classes_multipliers(char *cpc, const int classes, const float max_delta)
 {
     float *classes_multipliers = NULL;
     if (cpc) {
@@ -383,9 +398,15 @@ float *get_classes_multipliers(char *cpc, const int classes)
         }
         float max_counter = 0;
         int i;
-        for (i = 0; i < classes_counters; ++i) if (max_counter < counters_per_class[i]) max_counter = counters_per_class[i];
+        for (i = 0; i < classes_counters; ++i) {
+            if (counters_per_class[i] < 1) counters_per_class[i] = 1;
+            if (max_counter < counters_per_class[i]) max_counter = counters_per_class[i];
+        }
         classes_multipliers = (float *)calloc(classes_counters, sizeof(float));
-        for (i = 0; i < classes_counters; ++i) classes_multipliers[i] = max_counter / counters_per_class[i];
+        for (i = 0; i < classes_counters; ++i) {
+            classes_multipliers[i] = max_counter / counters_per_class[i];
+            if(classes_multipliers[i] > max_delta) classes_multipliers[i] = max_delta;
+        }
         free(counters_per_class);
         printf(" classes_multipliers: ");
         for (i = 0; i < classes_counters; ++i) printf("%.1f, ", classes_multipliers[i]);
@@ -410,13 +431,13 @@ layer parse_yolo(list *options, size_params params)
     }
     //assert(l.outputs == params.inputs);
 
+    l.max_delta = option_find_float_quiet(options, "max_delta", FLT_MAX);   // set 10
     char *cpc = option_find_str(options, "counters_per_class", 0);
-    l.classes_multipliers = get_classes_multipliers(cpc, classes);
+    l.classes_multipliers = get_classes_multipliers(cpc, classes, l.max_delta);
 
     l.label_smooth_eps = option_find_float_quiet(options, "label_smooth_eps", 0.0f);
     l.scale_x_y = option_find_float_quiet(options, "scale_x_y", 1);
     l.objectness_smooth = option_find_int_quiet(options, "objectness_smooth", 0);
-    l.max_delta = option_find_float_quiet(options, "max_delta", FLT_MAX);   // set 10
     l.iou_normalizer = option_find_float_quiet(options, "iou_normalizer", 0.75);
     l.cls_normalizer = option_find_float_quiet(options, "cls_normalizer", 1);
     char *iou_loss = option_find_str_quiet(options, "iou_loss", "mse");   //  "iou");
@@ -519,14 +540,13 @@ layer parse_gaussian_yolo(list *options, size_params params) // Gaussian_YOLOv3
         exit(EXIT_FAILURE);
     }
     //assert(l.outputs == params.inputs);
-
+    l.max_delta = option_find_float_quiet(options, "max_delta", FLT_MAX);   // set 10
     char *cpc = option_find_str(options, "counters_per_class", 0);
-    l.classes_multipliers = get_classes_multipliers(cpc, classes);
+    l.classes_multipliers = get_classes_multipliers(cpc, classes, l.max_delta);
 
     l.label_smooth_eps = option_find_float_quiet(options, "label_smooth_eps", 0.0f);
     l.scale_x_y = option_find_float_quiet(options, "scale_x_y", 1);
     l.objectness_smooth = option_find_int_quiet(options, "objectness_smooth", 0);
-    l.max_delta = option_find_float_quiet(options, "max_delta", FLT_MAX);   // set 10
     l.uc_normalizer = option_find_float_quiet(options, "uc_normalizer", 1.0);
     l.iou_normalizer = option_find_float_quiet(options, "iou_normalizer", 0.75);
     l.cls_normalizer = option_find_float_quiet(options, "cls_normalizer", 1.0);
@@ -1114,6 +1134,9 @@ void parse_net_options(list *options, network *net)
     else if (cutmix) net->mixup = 2;
     else if (mosaic) net->mixup = 3;
     net->letter_box = option_find_int_quiet(options, "letter_box", 0);
+    net->mosaic_bound = option_find_int_quiet(options, "mosaic_bound", 0);
+    net->contrastive = option_find_int_quiet(options, "contrastive", 0);
+    net->unsupervised = option_find_int_quiet(options, "unsupervised", 0);
     net->label_smooth_eps = option_find_float_quiet(options, "label_smooth_eps", 0.0f);
     net->resize_step = option_find_float_quiet(options, "resize_step", 32);
     net->attention = option_find_int_quiet(options, "attention", 0);
@@ -1337,6 +1360,9 @@ network parse_network_cfg_custom(char *filename, int batch, int time_steps)
         }else if(lt == SOFTMAX){
             l = parse_softmax(options, params);
             net.hierarchy = l.softmax_tree;
+            l.keep_delta_gpu = 1;
+        }else if (lt == CONTRASTIVE) {
+            l = parse_contrastive(options, params);
             l.keep_delta_gpu = 1;
         }else if(lt == NORMALIZATION){
             l = parse_normalization(options, params);
@@ -1817,9 +1843,11 @@ void save_weights_upto(network net, char *filename, int cutoff)
                 save_convolutional_weights(*(l.vo), fp);
             }
             save_convolutional_weights(*(l.wf), fp);
-            save_convolutional_weights(*(l.wi), fp);
-            save_convolutional_weights(*(l.wg), fp);
-            save_convolutional_weights(*(l.wo), fp);
+            if (!l.bottleneck) {
+                save_convolutional_weights(*(l.wi), fp);
+                save_convolutional_weights(*(l.wg), fp);
+                save_convolutional_weights(*(l.wo), fp);
+            }
             save_convolutional_weights(*(l.uf), fp);
             save_convolutional_weights(*(l.ui), fp);
             save_convolutional_weights(*(l.ug), fp);
@@ -2079,9 +2107,11 @@ void load_weights_upto(network *net, char *filename, int cutoff)
                 load_convolutional_weights(*(l.vo), fp);
             }
             load_convolutional_weights(*(l.wf), fp);
-            load_convolutional_weights(*(l.wi), fp);
-            load_convolutional_weights(*(l.wg), fp);
-            load_convolutional_weights(*(l.wo), fp);
+            if (!l.bottleneck) {
+                load_convolutional_weights(*(l.wi), fp);
+                load_convolutional_weights(*(l.wg), fp);
+                load_convolutional_weights(*(l.wo), fp);
+            }
             load_convolutional_weights(*(l.uf), fp);
             load_convolutional_weights(*(l.ui), fp);
             load_convolutional_weights(*(l.ug), fp);
