@@ -54,6 +54,7 @@ include/darknet/
 
 __pycache__/
 *.pyc
-darknet
 uselib
 uselib_track
+darknet
+vcpkg/

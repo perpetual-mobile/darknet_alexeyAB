@@ -11,6 +11,7 @@ On a GPU system, you can force CPU evaluation by any of:
 - Set global variable DARKNET_FORCE_CPU to True
 - Set environment variable CUDA_VISIBLE_DEVICES to -1
 - Set environment variable "FORCE_CPU" to "true"
+- Set environment variable "DARKNET_PATH" to path darknet lib .so (for Linux)
 
 Directly viewing or returning bounding-boxed images requires scikit-image to be installed (`pip install scikit-image`)
 
@@ -46,6 +47,7 @@ class DETECTION(Structure):
                 ("embedding_size", c_int),
                 ("sim", c_float),
                 ("track_id", c_int)]
+
 
 class DETNUMPAIR(Structure):
     _fields_ = [("num", c_int),
@@ -122,7 +124,8 @@ def print_detections(detections, coordinates=False):
     for label, confidence, bbox in detections:
         x, y, w, h = bbox
         if coordinates:
-            print("{}: {}%    (left_x: {:.0f}   top_y:  {:.0f}   width:   {:.0f}   height:  {:.0f})".format(label, confidence, x, y, w, h))
+            print("{}: {}%    (left_x: {:.0f}   top_y:  {:.0f}   width:   {:.0f}   height:  {:.0f})".format(
+                label, confidence, x, y, w, h))
         else:
             print("{}: {}%".format(label, confidence))
 
@@ -219,14 +222,16 @@ if os.name == "nt":
             lib = CDLL(winGPUdll, RTLD_GLOBAL)
             print("Environment variables indicated a CPU run, but we didn't find {}. Trying a GPU run anyway.".format(winNoGPUdll))
 else:
-    lib = CDLL(os.path.join(os.path.dirname(__file__), "libdarknet.so"), RTLD_GLOBAL)
+    lib = CDLL(os.path.join(
+        os.environ.get('DARKNET_PATH', './'),
+        "libdarknet.so"), RTLD_GLOBAL)
 lib.network_width.argtypes = [c_void_p]
 lib.network_width.restype = c_int
 lib.network_height.argtypes = [c_void_p]
 lib.network_height.restype = c_int
 
 copy_image_from_bytes = lib.copy_image_from_bytes
-copy_image_from_bytes.argtypes = [IMAGE,c_char_p]
+copy_image_from_bytes.argtypes = [IMAGE, c_char_p]
 
 predict = lib.network_predict_ptr
 predict.argtypes = [c_void_p, POINTER(c_float)]
@@ -273,6 +278,10 @@ load_net_custom = lib.load_network_custom
 load_net_custom.argtypes = [c_char_p, c_char_p, c_int, c_int]
 load_net_custom.restype = c_void_p
 
+free_network_ptr = lib.free_network_ptr
+free_network_ptr.argtypes = [c_void_p]
+free_network_ptr.restype = c_void_p
+
 do_nms_obj = lib.do_nms_obj
 do_nms_obj.argtypes = [POINTER(DETECTION), c_int, c_int, c_float]
 
@@ -307,5 +316,5 @@ predict_image_letterbox.restype = POINTER(c_float)
 
 network_predict_batch = lib.network_predict_batch
 network_predict_batch.argtypes = [c_void_p, IMAGE, c_int, c_int, c_int,
-                                   c_float, c_float, POINTER(c_int), c_int, c_int]
+                                  c_float, c_float, POINTER(c_int), c_int, c_int]
 network_predict_batch.restype = POINTER(DETNUMPAIR)
