@@ -914,6 +914,7 @@ void forward_yolo_layer(const layer l, network_state state)
             }
             *(l.cost) = avg_iou_loss + classification_loss;
         }
+    }
 
 
     /*  this is way to noisy for us, so we just don't show it
@@ -922,6 +923,7 @@ void forward_yolo_layer(const layer l, network_state state)
         classification_loss, iou_loss, loss);
     */
 }
+
 
 void backward_yolo_layer(const layer l, network_state state)
 {
